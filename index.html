@@ -1,58 +1,246 @@
 <!DOCTYPE html>
-<html>
+<html lang="th">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WebXR AR Basic</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Model Interaction - Assignment 1</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #1a1a1a; /* พื้นหลังสีเข้มเพื่อให้โมเดลเด่น */
+            font-family: 'Sarabun', sans-serif;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            z-index: 100;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px black;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 1.2rem;
+            transition: opacity 0.5s;
+        }
+        /* เพิ่ม Overlay บอกให้คลิกเพื่อเปิดเสียง */
+        #start-overlay {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #aaaaaa;
+            font-size: 0.9rem;
+            pointer-events: none;
+            opacity: 0.8;
+            animation: blink 2s infinite;
+        }
+        @keyframes blink {
+            0% { opacity: 0.4; }
+            50% { opacity: 1; }
+            100% { opacity: 0.4; }
+        }
+    </style>
+    <!-- Import Google Fonts for Thai support -->
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
 </head>
+<body>
 
-<body style="margin:0; overflow:hidden;">
-<script type="module">
-import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { ARButton } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/ARButton.js';
+    <div id="info">
+        <h2>3D Model Viewer</h2>
+        <p>คลิกซ้ายแล้วลากเพื่อหมุน | กลิ้งเมาส์เพื่อซูม (เสียงจะดังขึ้นเมื่อซูมใกล้) | คลิกขวาเพื่อเลื่อน</p>
+    </div>
+    
+    <div id="loading">กำลังโหลดโมเดล... (Loading...)</div>
+    <div id="start-overlay">🔊 คลิกที่หน้าจอ 1 ครั้งเพื่อเปิดเสียง (Click to enable sound)</div>
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(
-    70,
-    window.innerWidth / window.innerHeight,
-    0.01,
-    20
-);
+    <!-- Import Map for Three.js (Using ES Modules) -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.xr.enabled = true;
-document.body.appendChild(renderer.domElement);
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-// AR Button
-document.body.appendChild(
-    ARButton.createButton(renderer, { requiredFeatures: ['local'] })
-);
+        // 1. Setup Scene (การจัดฉาก)
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x333333); // สีพื้นหลัง
+        // เพิ่มหมอกเพื่อให้ดูมีมิติ
+        scene.fog = new THREE.Fog(0x333333, 10, 50);
 
-// Light
-const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-scene.add(light);
+        // 2. Setup Camera (กล้อง)
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 1.5, 3); // จัดตำแหน่งกล้อง
 
-// Cube
-const cube = new THREE.Mesh(
-    new THREE.BoxGeometry(0.2, 0.2, 0.2),
-    new THREE.MeshStandardMaterial({ color: 0xff0000 })
-);
-cube.position.set(0, 0, -0.5);
-scene.add(cube);
+        // --- เพิ่มส่วนระบบเสียง (Audio Setup) ---
+        // สร้าง AudioListener และติดไว้ที่กล้อง (เปรียบเหมือนหูของเรา)
+        const listener = new THREE.AudioListener();
+        camera.add( listener );
 
-// Animation Loop
-renderer.setAnimationLoop(() => {
-    cube.rotation.y += 0.01;
-    renderer.render(scene, camera);
-});
+        // ตัวแปรสำหรับเสียงที่จะติดกับโมเดล
+        let sound;
+        // ------------------------------------
 
-// Fix window resize
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-});
-</script>
+        // 3. Setup Renderer (ตัวประมวลผลภาพ)
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true; // เปิดใช้งานเงา
+        document.body.appendChild(renderer.domElement);
+
+        // 4. Setup Controls (การควบคุม - คะแนนส่วน Zoom และ Rotate)
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true; // ให้การหมุนมีความหน่วง นุ่มนวล
+        controls.dampingFactor = 0.05;
+        controls.enableZoom = true;    // ซูมเข้าออกได้ (Zoom)
+        controls.autoRotate = false;   // ปิดการหมุนอัตโนมัติเพื่อให้ผู้ใช้หมุนเองได้สะดวก
+
+        // 5. Lighting (แสงสว่าง)
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1); // แสงทั่วทั้งฉาก
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 2); // แสงอาทิตย์
+        directionalLight.position.set(5, 10, 7.5);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
+
+        // 6. Load Model (โหลดโมเดล - คะแนนส่วนแสดงโมเดล)
+        const loader = new GLTFLoader();
+        let model;
+        let mixer; // สำหรับ Animation ของโมเดล (ถ้ามี)
+
+        // URL โมเดลตัวอย่าง (Astronaut)
+        const modelUrl = 'https://modelviewer.dev/shared-assets/models/Astronaut.glb';
+
+        loader.load(
+            modelUrl,
+            function (gltf) {
+                model = gltf.scene;
+                
+                // จัดตำแหน่งและขนาด (Layout Positioning)
+                model.position.set(0, 0, 0);
+                model.scale.set(1, 1, 1);
+                
+                // เปิดเงาให้โมเดล
+                model.traverse((node) => {
+                    if (node.isMesh) {
+                        node.castShadow = true;
+                        node.receiveShadow = true;
+                    }
+                });
+
+                scene.add(model);
+
+                // --- เพิ่มเสียงให้กับโมเดล (Add Sound to Model) ---
+                // สร้าง PositionalAudio (เสียงที่มีทิศทาง)
+                sound = new THREE.PositionalAudio( listener );
+                
+                // โหลดไฟล์เสียง
+                const audioLoader = new THREE.AudioLoader();
+                // ใช้ URL ไฟล์เสียงตัวอย่าง (สามารถเปลี่ยนเป็น URL ของไฟล์ .mp3 หรือ .ogg อื่นๆ ได้)
+                // ตัวอย่าง: เสียงบรรยากาศ Sci-fi หรือเสียงเพลงประกอบ
+                const soundUrl = 'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/sounds/376737_Skullbeatz___Bad_Cat_Maste.mp3'; 
+                
+                audioLoader.load( soundUrl, function( buffer ) {
+                    sound.setBuffer( buffer );
+                    sound.setRefDistance( 1 ); // ระยะอ้างอิงความดัง
+                    sound.setLoop( true ); // ให้เล่นวนซ้ำ
+                    sound.setVolume( 0.5 ); // ความดัง (0.0 - 1.0)
+                    model.add( sound ); // ติดเสียงไว้ที่โมเดล
+                    console.log("Sound loaded, waiting for interaction to play.");
+                });
+                // -----------------------------------------------
+                
+                // ซ่อนข้อความ Loading
+                document.getElementById('loading').style.display = 'none';
+
+                // Setup Animation (ถ้าโมเดลมีท่าทางติดมา)
+                if (gltf.animations && gltf.animations.length > 0) {
+                    mixer = new THREE.AnimationMixer(model);
+                    // เล่น animation แรกที่พบ
+                    mixer.clipAction(gltf.animations[0]).play();
+                }
+            },
+            function (xhr) {
+                // แสดง % การโหลด
+                console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+            },
+            function (error) {
+                console.error('An error happened', error);
+                document.getElementById('loading').innerText = 'เกิดข้อผิดพลาดในการโหลดโมเดล';
+            }
+        );
+
+        // สร้างพื้นรองรับเงา
+        const mesh = new THREE.Mesh( 
+            new THREE.PlaneGeometry(20, 20), 
+            new THREE.MeshStandardMaterial({ color: 0x222222, depthWrite: false })
+        );
+        mesh.rotation.x = - Math.PI / 2;
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+
+        // 7. Animation Loop (ลูปการทำงาน - คะแนนส่วน Animation เพิ่มเติม)
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta(); // เวลาที่ผ่านไปในแต่ละเฟรม
+            const elapsedTime = clock.getElapsedTime(); // เวลาทั้งหมดตั้งแต่เริ่ม
+
+            // Update controls
+            controls.update();
+
+            // Update model animation (ท่าทางของโมเดล)
+            if (mixer) mixer.update(delta);
+
+            // *** แอนิเมชันเพิ่มเติม (Additional Animation) ***
+            // ทำให้โมเดลลอยขึ้นลงเบาๆ (Floating Effect)
+            if (model) {
+                model.position.y = Math.sin(elapsedTime) * 0.1 + 0.1; // ขยับขึ้นลงตามค่า Sine
+                // model.rotation.y += 0.005; // ถ้าอยากให้หมุนรอบตัวเองอัตโนมัติ ให้เปิดบรรทัดนี้
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // 8. Handle Resize (ปรับหน้าจอเมื่อย่อขยาย)
+        window.addEventListener('resize', onWindowResize, false);
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // 9. Handle User Interaction for Audio (จัดการเรื่องเสียงเมื่อผู้ใช้คลิก)
+        // เบราว์เซอร์ส่วนใหญ่บล็อกเสียงอัตโนมัติ ต้องรอให้ผู้ใช้คลิกก่อน
+        window.addEventListener('click', function() {
+            // เช็คว่าโหลดเสียงเสร็จหรือยัง และเสียงยังไม่ได้เล่นใช่ไหม
+            if (sound && !sound.isPlaying && sound.buffer) {
+                sound.play();
+                document.getElementById('start-overlay').style.display = 'none'; // ซ่อนข้อความแนะนำ
+            }
+        });
+
+        // เริ่มต้นลูป
+        animate();
+
+    </script>
 </body>
 </html>
